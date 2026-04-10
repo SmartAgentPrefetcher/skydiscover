@@ -460,6 +460,17 @@ class AdaEvolveDatabase(ProgramDatabase):
             self._enforce_island_population_limit(island_idx)
 
         if was_added:
+            # Stamp program with structured genealogy metadata
+            program.metadata["island_id"] = island_idx
+            program.metadata["is_migration"] = is_migration
+            program.metadata["sampling_mode"] = getattr(self, "_last_sampling_mode", None)
+            if is_migration:
+                program.metadata.setdefault("migration_history", []).append({
+                    "from_island": self.current_island,
+                    "to_island": island_idx,
+                    "iteration": iteration,
+                })
+
             # Update adaptive state
             fitness = self._get_fitness(program)
             if not is_migration:
@@ -1984,6 +1995,13 @@ class AdaEvolveDatabase(ProgramDatabase):
 
         if was_added:
             self.programs[program.id] = program
+
+            # Stamp merged program with genealogy metadata
+            program.metadata["island_id"] = idx
+            program.metadata["is_merge"] = True
+            program.metadata["merge_parent_ids"] = parent_ids
+            program.metadata["sampling_mode"] = "merge"
+
             fitness = self._get_fitness(program)
             self.adapter.record_evaluation(idx, fitness)
             self._invalidate_global_pareto_cache()

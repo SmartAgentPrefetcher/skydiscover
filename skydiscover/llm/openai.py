@@ -68,8 +68,17 @@ class OpenAILLM(LLMInterface):
 
         max_retries = self.retries if self.retries is not None else 0
         is_azure = self.api_base and ".openai.azure.com" in self.api_base.lower()
+        self._use_litellm = self.api_base and "bedrock" in (self.api_base or "").lower()
 
-        if is_azure:
+        if self._use_litellm:
+            # Bedrock via litellm library — no proxy needed
+            self.client = None
+            # Model name should be like "bedrock/us.anthropic.claude-opus-4-6-v1"
+            if not self.model.startswith("bedrock/"):
+                self._litellm_model = f"bedrock/{self.model}"
+            else:
+                self._litellm_model = self.model
+        elif is_azure:
             parsed_url = urlparse(self.api_base)
             azure_endpoint = f"{parsed_url.scheme}://{parsed_url.netloc}"
             query_params = parse_qs(parsed_url.query)
@@ -176,7 +185,31 @@ class OpenAILLM(LLMInterface):
                 else:
                     raise
 
+    async def _call_api_litellm(self, params: Dict[str, Any]) -> str:
+        """Call Bedrock via litellm library (no proxy needed)."""
+        import litellm
+
+        litellm_params = {
+            "model": self._litellm_model,
+            "messages": params["messages"],
+        }
+        if "max_tokens" in params:
+            litellm_params["max_tokens"] = params["max_tokens"]
+        if "temperature" in params:
+            litellm_params["temperature"] = params["temperature"]
+        # Don't pass both temperature and top_p to Bedrock
+        if "top_p" in params and "temperature" not in params:
+            litellm_params["top_p"] = params["top_p"]
+
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(
+            None, lambda: litellm.completion(**litellm_params)
+        )
+        return response.choices[0].message.content
+
     async def _call_api(self, params: Dict[str, Any]) -> str:
+        if self._use_litellm:
+            return await self._call_api_litellm(params)
         loop = asyncio.get_running_loop()
         try:
             response = await loop.run_in_executor(

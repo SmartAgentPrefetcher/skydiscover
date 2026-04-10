@@ -201,11 +201,15 @@ class AdaEvolveController(DiscoveryController):
 
             # Add child program info if available
             if child_program:
+                metadata = child_program.get("metadata", {})
                 stats["iteration_result"]["child_program"] = {
                     "id": child_program.get("id"),
                     "metrics": child_program.get("metrics"),
                     "generation": child_program.get("generation"),
                     "parent_id": child_program.get("parent_id"),
+                    "changes": metadata.get("changes", ""),
+                    "island_id": metadata.get("island_id"),
+                    "sampling_mode": metadata.get("sampling_mode"),
                 }
 
             # Write to JSONL file
@@ -426,6 +430,7 @@ class AdaEvolveController(DiscoveryController):
             )
 
         # Log progress
+        changes = child.metadata.get("changes", "")
         logger.info(
             f"Iteration {iteration}: Program {child.id[:8]} "
             f"(parent: {result.parent_id[:8] if result.parent_id else 'None'}) "
@@ -433,6 +438,8 @@ class AdaEvolveController(DiscoveryController):
             f" (llm: {result.llm_generation_time:.2f}s,"
             f" eval: {result.eval_time:.2f}s)"
         )
+        if changes:
+            logger.info(f"  Changes: {changes}")
 
         # Log metrics
         if child.metrics:
