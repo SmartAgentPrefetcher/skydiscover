@@ -686,6 +686,19 @@ class AdaEvolveController(DiscoveryController):
         child_metadata = {"changes": changes, "parent_metrics": parent.metrics}
         if image_path:
             child_metadata["image_path"] = image_path
+        # Capture LLM call metadata (model used, token counts) — set by openai.py
+        try:
+            if hasattr(result, "model_used") and result.model_used:
+                child_metadata["llm_model_used"] = result.model_used
+            if hasattr(result, "prompt_tokens") and result.prompt_tokens is not None:
+                child_metadata["llm_prompt_tokens"] = result.prompt_tokens
+            if hasattr(result, "completion_tokens") and result.completion_tokens is not None:
+                child_metadata["llm_completion_tokens"] = result.completion_tokens
+            if hasattr(result, "total_tokens") and result.total_tokens is not None:
+                child_metadata["llm_total_tokens"] = result.total_tokens
+            child_metadata["llm_generation_time_sec"] = llm_generation_time
+        except Exception:
+            pass
         child = Program(
             id=child_id,
             solution=child_solution,

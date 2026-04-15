@@ -124,8 +124,17 @@ class OpenAILLM(LLMInterface):
         """Generate a response. Pass image_output=True for image generation."""
         if kwargs.get("image_output"):
             return await self._generate_with_image(system_message, messages, **kwargs)
+        # Reset usage tracker before call; _call_api populates it
+        self._last_usage = {}
         text = await self._generate_text(system_message, messages, **kwargs)
-        return LLMResponse(text=text)
+        u = getattr(self, "_last_usage", {}) or {}
+        return LLMResponse(
+            text=text,
+            model_used=u.get("model") or self.model,
+            prompt_tokens=u.get("prompt_tokens"),
+            completion_tokens=u.get("completion_tokens"),
+            total_tokens=u.get("total_tokens"),
+        )
 
     # ------------------------------------------------------------------
     # Text generation (Chat Completions API)
@@ -205,7 +214,22 @@ class OpenAILLM(LLMInterface):
         response = await loop.run_in_executor(
             None, lambda: litellm.completion(**litellm_params)
         )
+        self._capture_usage(response)
         return response.choices[0].message.content
+
+    def _capture_usage(self, response):
+        """Extract token usage from response; store in self._last_usage."""
+        try:
+            usage = getattr(response, "usage", None)
+            if usage:
+                self._last_usage = {
+                    "model": getattr(response, "model", None),
+                    "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                    "completion_tokens": getattr(usage, "completion_tokens", None),
+                    "total_tokens": getattr(usage, "total_tokens", None),
+                }
+        except Exception:
+            pass
 
     async def _call_api(self, params: Dict[str, Any]) -> str:
         if self._use_litellm:
@@ -215,6 +239,7 @@ class OpenAILLM(LLMInterface):
             response = await loop.run_in_executor(
                 None, lambda: self.client.chat.completions.create(**params)
             )
+            self._capture_usage(response)
             return response.choices[0].message.content
         except (openai.BadRequestError, openai.APIStatusError) as exc:
             # Some Azure deployments only expose the Responses API.
