@@ -1676,7 +1676,17 @@ class AdaEvolveDatabase(ProgramDatabase):
         return list(self._global_pareto_cache or [])
 
     def _get_fitness(self, program: Program) -> float:
-        """Get scalar fitness score used by adaptive state and fallbacks."""
+        """Get scalar fitness score used by adaptive state and fallbacks.
+
+        Uses the best available measurement: if a program has been validated
+        on FireSim (FPGA ground truth), use that score. Otherwise fall back
+        to the Verilator proxy score. No mixing or artificial boosting —
+        FireSim is simply the authoritative answer when available.
+        """
+        metrics = getattr(program, "metrics", None) or {}
+        firesim_score = metrics.get("firesim_score")
+        if firesim_score is not None:
+            return float(firesim_score)
         return self._get_multiobjective_proxy_score(program)
 
     def _update_best_program(self, program: Program) -> bool:
